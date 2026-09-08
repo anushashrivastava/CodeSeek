@@ -9,16 +9,6 @@ share exact words with the code. Combines traditional keyword search
 a configurable hybrid ranker — with a second fusion strategy
 (Reciprocal Rank Fusion) implemented and evaluated alongside it.
 
-**Target use:** portfolio project for Software Engineering interviews.
-Emphasis is on understanding every component well enough to explain
-it — including the parts that didn't work as expected — not on
-maximizing features.
-
-If you're continuing this project with Claude (claude.ai, Claude Code,
-or another session), **paste this entire README as your first
-message**, with: "Continue building this project from where it left
-off." Everything needed to pick up seamlessly is below.
-
 ---
 
 ## Quick start
