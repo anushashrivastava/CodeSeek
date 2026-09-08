@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Code Search Engine</title>
+<style>
+  /* Plain HTML/JS/CSS, no build step, no framework -- see README
+     "Design decisions" table for why: this project has no need for
+     component-state complexity, so React/build tooling would be
+     complexity added for a problem this project doesn't have. */
+  :root {
+    --bg: #0f1117;
+    --panel: #171a23;
+    --border: #2a2f3d;
+    --text: #e6e8ef;
+    --muted: #8b91a5;
+    --accent: #5b8cff;
+    --accent-dim: #2c3e6b;
+    --bm25-color: #ff9f5b;
+    --cosine-color: #5bd6ff;
+    --error: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 1.5rem 2rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { margin: 0 0 0.25rem; font-size: 1.4rem; }
+  header p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+  main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1.5rem 2rem 3rem;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+  .panel h2 {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+  .row > label { font-size: 0.85rem; color: var(--muted); }
+
+  input[type=text], input[type=number] {
+    background: #0d0f15;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.95rem;
+  }
+  input[type=text]#repoPath, input[type=text]#queryInput { flex: 1; min-width: 200px; }
+  input[type=range] { accent-color: var(--accent); }
+  input[type=number] { width: 4.5rem; }
+
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.55rem 1.1rem;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  button:disabled { background: var(--accent-dim); cursor: default; }
+  button:hover:not(:disabled) { filter: brightness(1.1); }
+
+  .status { margin-top: 0.6rem; font-size: 0.88rem; color: var(--muted); min-height: 1.2em; }
+  .status.error { color: var(--error); }
+
+  .results { display: flex; flex-direction: column; gap: 0.75rem; }
+  .result {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.7rem 0.9rem;
+    cursor: pointer;
+    background: #14161f;
+  }
+  .result-header:hover { background: #191c28; }
+  .result-name { font-weight: 600; }
+  .result-name .type-badge {
+    font-weight: normal;
+    font-size: 0.72rem;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.05rem 0.35rem;
+    margin-left: 0.4rem;
+  }
+  .result-path { font-size: 0.82rem; color: var(--muted); margin-top: 0.15rem; }
+
+  .score-breakdown { display: flex; align-items: center; gap: 0.6rem; white-space: nowrap; }
+  .hybrid-score { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .bar { width: 60px; height: 6px; border-radius: 3px; background: var(--border); position: relative; overflow: hidden; }
+  .bar > span { position: absolute; left: 0; top: 0; bottom: 0; }
+  .bar.bm25 > span { background: var(--bm25-color); }
+  .bar.cosine > span { background: var(--cosine-color); }
+  .score-label { font-size: 0.72rem; color: var(--muted); }
+
+  .snippet {
+    display: none;
+    padding: 0.9rem;
+    background: #0b0d13;
+    border-top: 1px solid var(--border);
+  }
+  .snippet.open { display: block; }
+  .snippet pre {
+    margin: 0;
+    white-space: pre-wrap;
+    font-family: "SFMono-Regular", Consolas, Menlo, monospace;
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+
+  .legend { font-size: 0.78rem; color: var(--muted); margin-top: 0.5rem; }
+  .legend .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 0.25rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Code Search Engine</h1>
+  <p>Natural-language search over a Python codebase — hybrid keyword (BM25) + semantic (embeddings) ranking.</p>
+</header>
+
+<main>
+
+  <section class="panel">
+    <h2>API</h2>
+    <div class="row">
+      <label for="apiBase">Base URL</label>
+      <input type="text" id="apiBase" value="http://127.0.0.1:8000">
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>1. Index a repository</h2>
+    <div class="row">
+      <input type="text" id="repoPath" placeholder="e.g. sample_repo" value="sample_repo">
+      <button id="indexBtn">Index</button>
+    </div>
+    <div id="indexStatus" class="status"></div>
+  </section>
+
+  <section class="panel">
+    <h2>2. Search</h2>
+    <div class="row">
+      <input type="text" id="queryInput" placeholder="e.g. where do we check if someone is logged in">
+      <label for="topK">top_k</label>
+      <input type="number" id="topK" value="10" min="1" max="100">
+      <label for="alpha">alpha (semantic weight)</label>
+      <input type="range" id="alpha" min="0" max="1" step="0.1" value="0.5">
+      <span id="alphaValue">0.5</span>
+      <button id="searchBtn">Search</button>
+    </div>
+    <div id="searchStatus" class="status"></div>
+    <div class="legend">
+      <span class="swatch" style="background:var(--bm25-color)"></span>keyword (BM25, normalized)
+      &nbsp;&nbsp;
+      <span class="swatch" style="background:var(--cosine-color)"></span>semantic (cosine, normalized)
+      &mdash; click a result to view its source
+    </div>
+  </section>
+
+  <section id="results" class="results"></section>
+
+</main>
+
+<script>
+// Plain vanilla JS: fetch() calls straight to the FastAPI backend
+// (backend/api/main.py). No framework, no build step -- see README.
+
+const apiBaseInput = document.getElementById('apiBase');
+const repoPathInput = document.getElementById('repoPath');
+const indexBtn = document.getElementById('indexBtn');
+const indexStatus = document.getElementById('indexStatus');
+
+const queryInput = document.getElementById('queryInput');
+const topKInput = document.getElementById('topK');
+const alphaInput = document.getElementById('alpha');
+const alphaValue = document.getElementById('alphaValue');
+const searchBtn = document.getElementById('searchBtn');
+const searchStatus = document.getElementById('searchStatus');
+const resultsEl = document.getElementById('results');
+
+alphaInput.addEventListener('input', () => {
+  alphaValue.textContent = alphaInput.value;
+});
+
+function apiBase() {
+  return apiBaseInput.value.replace(/\/$/, '');
+}
+
+function setStatus(el, message, isError) {
+  el.textContent = message;
+  el.classList.toggle('error', Boolean(isError));
+}
+
+async function extractErrorDetail(response) {
+  try {
+    const body = await response.json();
+    if (body && body.detail) return body.detail;
+  } catch (e) {
+    // response wasn't JSON; fall through to generic message
+  }
+  return `HTTP ${response.status}`;
+}
+
+indexBtn.addEventListener('click', async () => {
+  const repoPath = repoPathInput.value.trim();
+  if (!repoPath) {
+    setStatus(indexStatus, 'Enter a repository path first.', true);
+    return;
+  }
+
+  indexBtn.disabled = true;
+  setStatus(indexStatus, 'Indexing... (first run also loads the embedding model, can take a while)', false);
+
+  try {
+    const response = await fetch(`${apiBase()}/index`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_path: repoPath }),
+    });
+
+    if (!response.ok) {
+      setStatus(indexStatus, `Indexing failed: ${await extractErrorDetail(response)}`, true);
+      return;
+    }
+
+    const body = await response.json();
+    setStatus(indexStatus, `Indexed ${body.indexed_units} code units from "${body.repo_path}".`, false);
+  } catch (e) {
+    setStatus(indexStatus, `Could not reach the API at ${apiBase()}. Is the server running?`, true);
+  } finally {
+    indexBtn.disabled = false;
+  }
+});
+
+searchBtn.addEventListener('click', async () => {
+  const query = queryInput.value.trim();
+  if (!query) {
+    setStatus(searchStatus, 'Enter a search query first.', true);
+    return;
+  }
+
+  searchBtn.disabled = true;
+  setStatus(searchStatus, 'Searching...', false);
+  resultsEl.innerHTML = '';
+
+  const params = new URLSearchParams({
+    q: query,
+    top_k: topKInput.value,
+    alpha: alphaInput.value,
+  });
+
+  try {
+    const response = await fetch(`${apiBase()}/search?${params.toString()}`);
+
+    if (!response.ok) {
+      setStatus(searchStatus, `Search failed: ${await extractErrorDetail(response)}`, true);
+      return;
+    }
+
+    const body = await response.json();
+    setStatus(searchStatus, `${body.results.length} result(s) for "${body.query}" (alpha=${body.alpha}).`, false);
+    renderResults(body.results);
+  } catch (e) {
+    setStatus(searchStatus, `Could not reach the API at ${apiBase()}. Is the server running?`, true);
+  } finally {
+    searchBtn.disabled = false;
+  }
+});
+
+function renderResults(results) {
+  resultsEl.innerHTML = '';
+
+  for (const r of results) {
+    const card = document.createElement('div');
+    card.className = 'result';
+
+    const header = document.createElement('div');
+    header.className = 'result-header';
+
+    const left = document.createElement('div');
+    const displayName = r.parent_class ? `${r.parent_class}.${r.name}` : r.name;
+    left.innerHTML = `
+      <div class="result-name">${escapeHtml(displayName)}<span class="type-badge">${escapeHtml(r.unit_type)}</span></div>
+      <div class="result-path">${escapeHtml(r.file_path)}:${r.start_line}-${r.end_line}</div>
+    `;
+
+    const right = document.createElement('div');
+    right.className = 'score-breakdown';
+    right.innerHTML = `
+      <div>
+        <div class="bar bm25"><span style="width:${r.bm25_normalized * 100}%"></span></div>
+        <div class="bar cosine"><span style="width:${r.cosine_normalized * 100}%"></span></div>
+      </div>
+      <span class="hybrid-score" title="raw bm25=${r.bm25_score.toFixed(2)}, cosine=${r.cosine_score.toFixed(3)}">${r.hybrid_score.toFixed(3)}</span>
+    `;
+
+    header.appendChild(left);
+    header.appendChild(right);
+
+    const snippet = document.createElement('div');
+    snippet.className = 'snippet';
+    const pre = document.createElement('pre');
+    pre.textContent = r.snippet;
+    snippet.appendChild(pre);
+
+    header.addEventListener('click', () => {
+      snippet.classList.toggle('open');
+    });
+
+    card.appendChild(header);
+    card.appendChild(snippet);
+    resultsEl.appendChild(card);
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+</script>
+
+</body>
+</html>
