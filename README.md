@@ -340,7 +340,7 @@ table and the `alpha`-sweep table across 0.0–1.0 in steps of 0.1):
   and exact jargon, never found a query where BM25 was *necessary*** —
   semantic-only ties its perfect recall every time. That doesn't mean
   no such query exists on this corpus; it means none has been found
-  yet (see Limitations).
+  (see Limitations).
 - **Both fusion strategies tie-or-lose to semantic-only overall, via
   two different, root-caused failure modes:**
   - Min-max hybrid (`paraphrase` category, `alpha=0.5`): a query
@@ -360,7 +360,7 @@ table and the `alpha`-sweep table across 0.0–1.0 in steps of 0.1):
     *magnitude* that would tell you the difference between "barely
     present" and "genuinely absent" — min-max hybrid preserves that
     magnitude and still finds the answer here.
-  
+
   These are mirror-image failure modes, not the same bug twice: one
   fusion strategy can be fooled by *inflated normalized scores*, the
   other by *structural bias toward consensus across two signals*.
@@ -384,9 +384,9 @@ sweep (`tune_alpha.py`) confirmed no value between 0.0 and 1.0 beats
 
 This is **not** evidence that "semantic search is universally better"
 or "keyword search / hybrid fusion is useless" — it's evidence that,
-on this specific 35-unit synthetic corpus with the query styles tested
-so far, semantic search alone was never beaten. Two structural reasons
-this shouldn't be over-generalized are in Limitations below, and one
+on this specific 35-unit synthetic corpus with the query styles tested,
+semantic search alone was never beaten. Two structural reasons this
+shouldn't be over-generalized are in Limitations below, and one
 positive result for BM25 exists regardless of the aggregate numbers:
 the `partial_identifier` category shows a real, root-caused case
 (the tokenizer's lack of compound-word splitting) where BM25
@@ -397,9 +397,8 @@ dominant in this particular label set.
 
 **`DEFAULT_ALPHA` remains `0.5`, unchanged.** `HybridRanker` remains
 the default ranker in the codebase; `RRFRanker` is implemented, tested,
-and evaluated as an alternative, not swapped in. Both decisions are
-left open for the project owner rather than made unilaterally off one
-benchmark — see Limitations for exactly why.
+and evaluated as an alternative, not swapped in. Neither default was
+changed off a single benchmark — see Limitations for exactly why.
 
 ---
 
@@ -482,7 +481,7 @@ Stated directly, not buried in caveats scattered across old build logs:
    a search for an optimal value. The evaluation deliberately avoided
    tuning either after seeing an unfavorable result, to prevent
    flattering a specific benchmark run — see the design-decisions
-   table. Both remain open, explicit decisions for the project owner.
+   table.
 7. **The frontend and API have no authentication, rate limiting, or
    production hardening** — appropriate for a local single-user dev
    tool (the explicit scope), not for exposing this to untrusted
@@ -502,18 +501,13 @@ Stated directly, not buried in caveats scattered across old build logs:
 | 6 | FastAPI (`/index`, `/search`, `/health`) | ✅ Done, tested, verified live |
 | 7 | Frontend (plain HTML/JS) | ✅ Done, verified in a real browser end-to-end |
 | 8 | Evaluation (Precision@5/Recall@5, incl. RRF) | ✅ Done — see Evaluation above for full real results |
-| 9 | Optional: "Explain this code" LLM button | ⬜ Not started, optional |
-| 10 | Final polish | ✅ This pass: codebase deduplicated (`backend/pipeline.py` extracted), dead code removed, end-to-end tests added, README restructured |
+| 9 | Final polish | ✅ Done — codebase deduplicated (`backend/pipeline.py` extracted), dead code removed, end-to-end tests added, README restructured |
 
 **Test suite: 65/65 passing.** Verified live against `sample_repo/`
-with the real model after this cleanup pass: `POST /index` →
+with the real model after the cleanup pass: `POST /index` →
 `indexed_units: 35`; `GET /search?q=verify+someone+is+who+they+claim+to+be`
 → `check_credentials` first at `hybrid_score=1.000` — identical to
 every prior verification, confirming the refactor changed no behavior.
-
-Only Stage 9 (optional LLM feature) remains, and it's explicitly
-optional — this project's core goal (keyword + semantic + hybrid
-search, honestly evaluated) is complete.
 
 ---
 
@@ -561,7 +555,7 @@ code-search-engine/
 
 ---
 
-## Engineering ground rules (still in force)
+## Engineering ground rules
 
 - No unnecessary abstractions, no dozens of trivial files, no
   microservices, no agents, no complex LLM orchestration.
